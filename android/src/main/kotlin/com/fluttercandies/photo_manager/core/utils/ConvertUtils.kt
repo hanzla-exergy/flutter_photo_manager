@@ -122,15 +122,21 @@ object ConvertUtils {
         val list = ArrayList<OrderByCond>()
         // Handle platform default sorting first.
         if (orders.isEmpty()) {
-            // Use ID to sort by default.
-            return arrayListOf(OrderByCond(MediaStore.MediaColumns._ID, false))
+            // Use DATE_TAKEN with DATE_ADDED fallback as default (desc = newest first)
+            // This matches user expectations for chronological sorting
+            val defaultDateSort = "CASE WHEN IFNULL(${MediaStore.MediaColumns.DATE_TAKEN}, 0) > 0 THEN ${MediaStore.MediaColumns.DATE_TAKEN} / 1000 ELSE ${MediaStore.MediaColumns.DATE_ADDED} END"
+            return arrayListOf(OrderByCond(defaultDateSort, false))
         }
         for (order in orders) {
             val map = order as Map<*, *>
             val keyIndex = map["type"] as Int
             val asc = map["asc"] as Boolean
             val key = when (keyIndex) {
-                0 -> MediaStore.MediaColumns.DATE_ADDED
+                // For createDate (type 0), use DATE_TAKEN first with DATE_ADDED as fallback
+                // This matches the logic in CursorExtensions.toAssetEntity()
+                // Using CASE WHEN with NULL check to prioritize DATE_TAKEN, converting milliseconds to seconds
+                // IFNULL/COALESCE handles NULL values, > 0 handles 0 values
+                0 -> "CASE WHEN IFNULL(${MediaStore.MediaColumns.DATE_TAKEN}, 0) > 0 THEN ${MediaStore.MediaColumns.DATE_TAKEN} / 1000 ELSE ${MediaStore.MediaColumns.DATE_ADDED} END"
                 1 -> MediaStore.MediaColumns.DATE_MODIFIED
                 else -> null
             } ?: continue

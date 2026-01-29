@@ -70,7 +70,7 @@ class _SimpleExamplePage extends StatefulWidget {
 }
 
 class _SimpleExamplePageState extends State<_SimpleExamplePage> {
-  final int _sizePerPage = 50;
+  final int _sizePerPage = 150;
 
   AssetPathEntity? _path;
   List<AssetEntity>? _entities;
@@ -185,6 +185,7 @@ class _SimpleExamplePageState extends State<_SimpleExamplePage> {
     setState(() {
       _isLoadingMore = true;
     });
+
     final List<AssetEntity> entities = await _path!.getAssetListPaged(
       page: _page + 1,
       size: _sizePerPage,

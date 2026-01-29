@@ -71,11 +71,13 @@ fun Cursor.toAssetEntity(
     }
 
     val date = if (isAboveAndroidQ) {
-        var tmpTime = getLong(DATE_TAKEN) / 1000
-        if (tmpTime == 0L) {
-            tmpTime = getLong(DATE_ADDED)
+        // DATE_TAKEN is in milliseconds, DATE_ADDED is in seconds
+        val dateTaken = getLong(DATE_TAKEN)
+        if (dateTaken > 0L) {
+            dateTaken / 1000  // Convert DATE_TAKEN from milliseconds to seconds
+        } else {
+            getLong(DATE_ADDED)  // DATE_ADDED is already in seconds
         }
-        tmpTime
     } else getLong(DATE_ADDED)
     val type = getInt(MediaStore.Files.FileColumns.MEDIA_TYPE)
     val mimeType = getString(MIME_TYPE)
