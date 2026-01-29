@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:provider/provider.dart';
@@ -80,6 +81,48 @@ class _SimpleExamplePageState extends State<_SimpleExamplePage> {
   bool _isLoadingMore = false;
   bool _hasMoreToLoad = true;
 
+  // Grouped entities by date
+  Map<String, List<AssetEntity>> _groupedEntities = {};
+  List<String> _dateKeys = [];
+
+  void _groupEntitiesByDate(List<AssetEntity> entities) {
+    final Map<String, List<AssetEntity>> grouped = {};
+
+    for (final entity in entities) {
+      final DateTime createDate = entity.createDateTime;
+      final String dateKey = DateFormat('yyyy-MM-dd').format(createDate);
+
+      if (grouped.containsKey(dateKey)) {
+        grouped[dateKey]!.add(entity);
+      } else {
+        grouped[dateKey] = [entity];
+      }
+    }
+
+    // Sort date keys in descending order (most recent first)
+    final List<String> sortedKeys = grouped.keys.toList()
+      ..sort((a, b) => b.compareTo(a));
+
+    _groupedEntities = grouped;
+    _dateKeys = sortedKeys;
+  }
+
+  String _formatDateHeader(String dateKey) {
+    final DateTime date = DateTime.parse(dateKey);
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTime yesterday = today.subtract(const Duration(days: 1));
+    final DateTime dateOnly = DateTime(date.year, date.month, date.day);
+
+    if (dateOnly == today) {
+      return 'Today';
+    } else if (dateOnly == yesterday) {
+      return 'Yesterday';
+    } else {
+      return DateFormat('MMMM dd, yyyy').format(date);
+    }
+  }
+
   Future<void> _requestAssets() async {
     setState(() {
       _isLoading = true;
@@ -132,12 +175,16 @@ class _SimpleExamplePageState extends State<_SimpleExamplePage> {
     }
     setState(() {
       _entities = entities;
+      _groupEntitiesByDate(entities);
       _isLoading = false;
       _hasMoreToLoad = _entities!.length < _totalEntitiesCount;
     });
   }
 
   Future<void> _loadMoreAsset() async {
+    setState(() {
+      _isLoadingMore = true;
+    });
     final List<AssetEntity> entities = await _path!.getAssetListPaged(
       page: _page + 1,
       size: _sizePerPage,
@@ -147,6 +194,7 @@ class _SimpleExamplePageState extends State<_SimpleExamplePage> {
     }
     setState(() {
       _entities!.addAll(entities);
+      _groupEntitiesByDate(_entities!);
       _page++;
       _hasMoreToLoad = _entities!.length < _totalEntitiesCount;
       _isLoadingMore = false;
@@ -164,34 +212,84 @@ class _SimpleExamplePageState extends State<_SimpleExamplePage> {
     if (entities.isEmpty) {
       return const Center(child: Text('No assets found on this device.'));
     }
-    return GridView.custom(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-      ),
-      childrenDelegate: SliverChildBuilderDelegate(
-        (BuildContext context, int index) {
-          if (index == entities.length - 8 &&
-              !_isLoadingMore &&
-              _hasMoreToLoad) {
-            _loadMoreAsset();
-          }
-          final AssetEntity entity = entities[index];
-          return ImageItemWidget(
-            key: ValueKey<int>(index),
-            entity: entity,
-            option: const ThumbnailOption(size: ThumbnailSize.square(200)),
-          );
-        },
-        childCount: entities.length,
-        findChildIndexCallback: (Key key) {
-          // Re-use elements.
-          if (key is ValueKey<int>) {
-            return key.value;
-          }
-          return null;
-        },
-      ),
+
+    return CustomScrollView(
+      slivers: [
+        ..._buildDateSections(),
+        if (_isLoadingMore)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Center(child: CircularProgressIndicator.adaptive()),
+            ),
+          ),
+        if (_hasMoreToLoad && !_isLoadingMore)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Center(
+                child: TextButton(
+                  onPressed: _loadMoreAsset,
+                  child: const Text('Load More'),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
+  }
+
+  List<Widget> _buildDateSections() {
+    final List<Widget> sections = [];
+
+    for (final dateKey in _dateKeys) {
+      final List<AssetEntity> dateEntities = _groupedEntities[dateKey]!;
+
+      // Add date header
+      sections.add(
+        SliverToBoxAdapter(
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: Text(
+              _formatDateHeader(dateKey),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+          ),
+        ),
+      );
+
+      // Add grid of images for this date
+      sections.add(
+        SliverPadding(
+          padding: const EdgeInsets.all(2.0),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              crossAxisSpacing: 2.0,
+              mainAxisSpacing: 2.0,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (BuildContext context, int index) {
+                final AssetEntity entity = dateEntities[index];
+                return ImageItemWidget(
+                  key: ValueKey<String>('${dateKey}_$index'),
+                  entity: entity,
+                  option:
+                      const ThumbnailOption(size: ThumbnailSize.square(200)),
+                );
+              },
+              childCount: dateEntities.length,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return sections;
   }
 
   @override
